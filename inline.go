@@ -8,6 +8,15 @@ import (
 )
 
 func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (*exprpb.Expr, error) {
+	return ReplaceVariables(expr, renames, nil)
+}
+
+func ReplaceVariables(expr *exprpb.Expr, constRenames map[string]*exprpb.Expr_ConstExpr, aliases map[string]string) (*exprpb.Expr, error) {
+	if len(constRenames) == 0 && len(aliases) == 0 {
+		// No modifications.
+		return expr, nil
+	}
+
 	if expr == nil {
 		return nil, nil
 	}
@@ -18,16 +27,26 @@ func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (
 		return expr, nil
 
 	case *exprpb.Expr_IdentExpr:
-		if constExpr, has := renames[e.IdentExpr.Name]; has {
+		if constExpr, has := constRenames[e.IdentExpr.Name]; has {
 			return &exprpb.Expr{
 				Id:       expr.Id,
 				ExprKind: constExpr,
 			}, nil
 		}
+		if alias, has := aliases[e.IdentExpr.Name]; has {
+			return &exprpb.Expr{
+				Id: expr.Id,
+				ExprKind: &exprpb.Expr_IdentExpr{
+					IdentExpr: &exprpb.Expr_Ident{
+						Name: alias,
+					},
+				},
+			}, nil
+		}
 		return expr, nil
 
 	case *exprpb.Expr_SelectExpr:
-		operand, err := InlineConst(e.SelectExpr.Operand, renames)
+		operand, err := ReplaceVariables(e.SelectExpr.Operand, constRenames, aliases)
 		if err != nil {
 			return nil, err
 		}
@@ -42,13 +61,13 @@ func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (
 
 	case *exprpb.Expr_CallExpr:
 		exprCall := e.CallExpr
-		target, err := InlineConst(exprCall.Target, renames)
+		target, err := ReplaceVariables(exprCall.Target, constRenames, aliases)
 		if err != nil {
 			return nil, err
 		}
 		args := make([]*exprpb.Expr, 0, len(exprCall.Args))
 		for _, arg := range exprCall.Args {
-			argCopy, err := InlineConst(arg, renames)
+			argCopy, err := ReplaceVariables(arg, constRenames, aliases)
 			if err != nil {
 				return nil, err
 			}
@@ -67,7 +86,7 @@ func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (
 	case *exprpb.Expr_ListExpr:
 		elements := make([]*exprpb.Expr, 0, len(e.ListExpr.Elements))
 		for _, elem := range e.ListExpr.Elements {
-			elemCopy, err := InlineConst(elem, renames)
+			elemCopy, err := ReplaceVariables(elem, constRenames, aliases)
 			if err != nil {
 				return nil, err
 			}
@@ -86,13 +105,13 @@ func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (
 		entries := make([]*exprpb.Expr_CreateStruct_Entry, 0, len(e.StructExpr.Entries))
 		for _, entry := range e.StructExpr.Entries {
 			entryCopy := proto.Clone(entry).(*exprpb.Expr_CreateStruct_Entry)
-			value, err := InlineConst(entry.Value, renames)
+			value, err := ReplaceVariables(entry.Value, constRenames, aliases)
 			if err != nil {
 				return nil, err
 			}
 			entryCopy.Value = value
 			if mapKey, ok := entry.KeyKind.(*exprpb.Expr_CreateStruct_Entry_MapKey); ok {
-				mapKeyCopy, err := InlineConst(mapKey.MapKey, renames)
+				mapKeyCopy, err := ReplaceVariables(mapKey.MapKey, constRenames, aliases)
 				if err != nil {
 					return nil, err
 				}
@@ -114,23 +133,23 @@ func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (
 	case *exprpb.Expr_ComprehensionExpr:
 		c := proto.Clone(e.ComprehensionExpr).(*exprpb.Expr_Comprehension)
 		var err error
-		c.IterRange, err = InlineConst(c.IterRange, renames)
+		c.IterRange, err = ReplaceVariables(c.IterRange, constRenames, aliases)
 		if err != nil {
 			return nil, err
 		}
-		c.AccuInit, err = InlineConst(c.AccuInit, renames)
+		c.AccuInit, err = ReplaceVariables(c.AccuInit, constRenames, aliases)
 		if err != nil {
 			return nil, err
 		}
-		c.LoopCondition, err = InlineConst(c.LoopCondition, renames)
+		c.LoopCondition, err = ReplaceVariables(c.LoopCondition, constRenames, aliases)
 		if err != nil {
 			return nil, err
 		}
-		c.LoopStep, err = InlineConst(c.LoopStep, renames)
+		c.LoopStep, err = ReplaceVariables(c.LoopStep, constRenames, aliases)
 		if err != nil {
 			return nil, err
 		}
-		c.Result, err = InlineConst(c.Result, renames)
+		c.Result, err = ReplaceVariables(c.Result, constRenames, aliases)
 		if err != nil {
 			return nil, err
 		}
