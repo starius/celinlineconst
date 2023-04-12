@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
+	"google.golang.org/protobuf/proto"
 )
 
 func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (*exprpb.Expr, error) {
@@ -30,12 +31,12 @@ func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (
 		if err != nil {
 			return nil, err
 		}
-		selectExpr := *e.SelectExpr
+		selectExpr := proto.Clone(e.SelectExpr).(*exprpb.Expr_Select)
 		selectExpr.Operand = operand
 		return &exprpb.Expr{
 			Id: expr.Id,
 			ExprKind: &exprpb.Expr_SelectExpr{
-				SelectExpr: &selectExpr,
+				SelectExpr: selectExpr,
 			},
 		}, nil
 
@@ -53,13 +54,13 @@ func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (
 			}
 			args = append(args, argCopy)
 		}
-		exprCallCopy := *exprCall
+		exprCallCopy := proto.Clone(exprCall).(*exprpb.Expr_Call)
 		exprCallCopy.Target = target
 		exprCallCopy.Args = args
 		return &exprpb.Expr{
 			Id: expr.Id,
 			ExprKind: &exprpb.Expr_CallExpr{
-				CallExpr: &exprCallCopy,
+				CallExpr: exprCallCopy,
 			},
 		}, nil
 
@@ -84,7 +85,7 @@ func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (
 	case *exprpb.Expr_StructExpr:
 		entries := make([]*exprpb.Expr_CreateStruct_Entry, 0, len(e.StructExpr.Entries))
 		for _, entry := range e.StructExpr.Entries {
-			entryCopy := *entry
+			entryCopy := proto.Clone(entry).(*exprpb.Expr_CreateStruct_Entry)
 			value, err := InlineConst(entry.Value, renames)
 			if err != nil {
 				return nil, err
@@ -99,19 +100,19 @@ func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (
 					MapKey: mapKeyCopy,
 				}
 			}
-			entries = append(entries, &entryCopy)
+			entries = append(entries, entryCopy)
 		}
-		createStruct := *e.StructExpr
+		createStruct := proto.Clone(e.StructExpr).(*exprpb.Expr_CreateStruct)
 		createStruct.Entries = entries
 		return &exprpb.Expr{
 			Id: expr.Id,
 			ExprKind: &exprpb.Expr_StructExpr{
-				StructExpr: &createStruct,
+				StructExpr: createStruct,
 			},
 		}, nil
 
 	case *exprpb.Expr_ComprehensionExpr:
-		c := *e.ComprehensionExpr
+		c := proto.Clone(e.ComprehensionExpr).(*exprpb.Expr_Comprehension)
 		var err error
 		c.IterRange, err = InlineConst(c.IterRange, renames)
 		if err != nil {
@@ -136,7 +137,7 @@ func InlineConst(expr *exprpb.Expr, renames map[string]*exprpb.Expr_ConstExpr) (
 		return &exprpb.Expr{
 			Id: expr.Id,
 			ExprKind: &exprpb.Expr_ComprehensionExpr{
-				ComprehensionExpr: &c,
+				ComprehensionExpr: c,
 			},
 		}, nil
 
